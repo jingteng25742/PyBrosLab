@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Day Planner Tasks</title>
+    <style>
+        :root {
+            font-family: Arial, Helvetica, sans-serif;
+            color: #1f2933;
+            background-color: #f5f7fa;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #f5f7fa;
+        }
+
+        header {
+            background-color: #111827;
+            color: #f8fafc;
+            padding: 1.5rem 2rem;
+        }
+
+        main {
+            padding: 2rem;
+            max-width: 960px;
+            margin: 0 auto;
+        }
+
+        h1, h2 {
+            margin-top: 0;
+        }
+
+        form {
+            background: #ffffff;
+            border: 1px solid #d2d6dc;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
+        }
+
+        label {
+            font-weight: bold;
+            display: block;
+            margin-bottom: 0.3rem;
+        }
+
+        input, textarea, select {
+            width: 100%;
+            padding: 0.75rem;
+            margin-bottom: 1rem;
+            border-radius: 6px;
+            border: 1px solid #d2d6dc;
+            font-size: 1rem;
+            box-sizing: border-box;
+        }
+
+        textarea {
+            min-height: 100px;
+        }
+
+        button {
+            border: none;
+            border-radius: 6px;
+            padding: 0.75rem 1.25rem;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+
+        button.primary {
+            background-color: #2563eb;
+            color: #ffffff;
+        }
+
+        button.secondary {
+            background-color: #9ca3af;
+            color: #111827;
+            margin-left: 0.5rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #ffffff;
+            border: 1px solid #d2d6dc;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
+        }
+
+        th, td {
+            padding: 0.75rem;
+            text-align: left;
+        }
+
+        th {
+            background: #f3f4f6;
+            font-size: 0.95rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        tr:nth-child(even) td {
+            background-color: #f9fafb;
+        }
+
+        .status-pill {
+            padding: 0.2rem 0.5rem;
+            border-radius: 999px;
+            font-size: 0.85rem;
+            display: inline-block;
+        }
+
+        .status-pending {
+            background-color: #fee2e2;
+            color: #991b1b;
+        }
+
+        .status-scheduled {
+            background-color: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-done {
+            background-color: #dbeafe;
+            color: #1e3a8a;
+        }
+
+        #status-message {
+            margin-bottom: 1rem;
+            min-height: 1.2em;
+        }
+
+        @media (max-width: 720px) {
+            table, thead, tbody, th, td, tr {
+                display: block;
+            }
+
+            th {
+                display: none;
+            }
+
+            tr {
+                margin-bottom: 1rem;
+                border-bottom: 1px solid #e5e7eb;
+            }
+
+            td {
+                display: flex;
+                justify-content: space-between;
+                padding: 0.5rem;
+            }
+
+            td::before {
+                content: attr(data-label);
+                font-weight: bold;
+                margin-right: 0.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>AI Day Planner &mdash; Tasks</h1>
+        <p>Use the form below to add or edit tasks, then auto-generate a daily plan from the API.</p>
+    </header>
+    <main>
+        <section>
+            <h2 id="form-heading">Add a New Task</h2>
+            <form id="task-form">
+                <label for="title">Title</label>
+                <input id="title" name="title" type="text" placeholder="Task name" required />
+
+                <label for="description">Description</label>
+                <textarea id="description" name="description" placeholder="Notes, links, etc."></textarea>
+
+                <label for="priority">Priority (1-5)</label>
+                <input id="priority" name="priority" type="number" min="1" max="5" value="3" required />
+
+                <label for="duration_minutes">Duration (minutes)</label>
+                <input id="duration_minutes" name="duration_minutes" type="number" min="15" max="240" value="60" required />
+
+                <label for="location">Location</label>
+                <input id="location" name="location" type="text" placeholder="Optional" />
+
+                <label for="due_date">Due Date</label>
+                <input id="due_date" name="due_date" type="datetime-local" />
+
+                <div>
+                    <button id="submit-btn" class="primary" type="submit">Add Task</button>
+                    <button id="cancel-btn" class="secondary" type="button" hidden>Cancel Edit</button>
+                </div>
+            </form>
+            <div id="status-message"></div>
+        </section>
+
+        <section>
+            <h2>Existing Tasks</h2>
+            <table id="tasks-table">
+                <thead>
+                    <tr>
+                        <th>Title</th>
+                        <th>Priority</th>
+                        <th>Duration</th>
+                        <th>Status</th>
+                        <th>Due</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td colspan="6">Loading tasks...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+    </main>
+
+    <script>
+        const form = document.getElementById('task-form');
+        const tasksTableBody = document.querySelector('#tasks-table tbody');
+        const submitBtn = document.getElementById('submit-btn');
+        const cancelBtn = document.getElementById('cancel-btn');
+        const formHeading = document.getElementById('form-heading');
+        const statusMessage = document.getElementById('status-message');
+        let editingId = null;
+
+        async function fetchTasks() {
+            const response = await fetch('/tasks');
+            if (!response.ok) {
+                throw new Error('Failed to fetch tasks');
+            }
+            return response.json();
+        }
+
+        function renderTasks(tasks) {
+            if (!tasks.length) {
+                tasksTableBody.innerHTML = '<tr><td colspan="6">No tasks yet. Add one above!</td></tr>';
+                return;
+            }
+
+            tasksTableBody.innerHTML = '';
+            tasks.forEach((task) => {
+                const row = document.createElement('tr');
+
+                const titleCell = document.createElement('td');
+                titleCell.dataset.label = 'Title';
+                titleCell.textContent = task.title;
+
+                const priorityCell = document.createElement('td');
+                priorityCell.dataset.label = 'Priority';
+                priorityCell.textContent = task.priority;
+
+                const durationCell = document.createElement('td');
+                durationCell.dataset.label = 'Duration';
+                durationCell.textContent = `${task.duration_minutes} min`;
+
+                const statusCell = document.createElement('td');
+                statusCell.dataset.label = 'Status';
+                const pill = document.createElement('span');
+                pill.className = `status-pill status-${task.status}`;
+                pill.textContent = task.status;
+                statusCell.appendChild(pill);
+
+                const dueCell = document.createElement('td');
+                dueCell.dataset.label = 'Due';
+                dueCell.textContent = task.due_date ? new Date(task.due_date).toLocaleString() : 'n/a';
+
+                const actionCell = document.createElement('td');
+                actionCell.dataset.label = 'Edit';
+                const editButton = document.createElement('button');
+                editButton.type = 'button';
+                editButton.textContent = 'Edit';
+                editButton.className = 'secondary';
+                editButton.addEventListener('click', () => beginEdit(task));
+                actionCell.appendChild(editButton);
+
+                row.append(titleCell, priorityCell, durationCell, statusCell, dueCell, actionCell);
+                tasksTableBody.appendChild(row);
+            });
+        }
+
+        function beginEdit(task) {
+            editingId = task.id;
+            formHeading.textContent = `Editing: ${task.title}`;
+            submitBtn.textContent = 'Save Changes';
+            cancelBtn.hidden = false;
+
+            form.title.value = task.title;
+            form.description.value = task.description || '';
+            form.priority.value = task.priority;
+            form.duration_minutes.value = task.duration_minutes;
+            form.location.value = task.location || '';
+            form.due_date.value = task.due_date ? task.due_date.slice(0, 16) : '';
+        }
+
+        function resetForm() {
+            editingId = null;
+            form.reset();
+            form.priority.value = form.priority.value || 3;
+            form.duration_minutes.value = form.duration_minutes.value || 60;
+            formHeading.textContent = 'Add a New Task';
+            submitBtn.textContent = 'Add Task';
+            cancelBtn.hidden = true;
+        }
+
+        async function saveTask(event) {
+            event.preventDefault();
+            const formData = new FormData(form);
+            const payload = Object.fromEntries(formData.entries());
+
+            payload.priority = Number(payload.priority);
+            payload.duration_minutes = Number(payload.duration_minutes);
+
+            if (!payload.due_date) {
+                delete payload.due_date;
+            }
+
+            if (!payload.location) {
+                delete payload.location;
+            }
+
+            const url = editingId ? `/tasks/${editingId}` : '/tasks';
+            const method = editingId ? 'PATCH' : 'POST';
+
+            const response = await fetch(url, {
+                method,
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(errorText || 'Request failed');
+            }
+
+            resetForm();
+            flashMessage('Task saved');
+            await refreshTasks();
+        }
+
+        async function refreshTasks() {
+            try {
+                const tasks = await fetchTasks();
+                renderTasks(tasks);
+            } catch (error) {
+                tasksTableBody.innerHTML = `<tr><td colspan="6">${error.message}</td></tr>`;
+            }
+        }
+
+        function flashMessage(message, isError = false) {
+            statusMessage.textContent = message;
+            statusMessage.style.color = isError ? '#b91c1c' : '#065f46';
+            if (message) {
+                setTimeout(() => {
+                    statusMessage.textContent = '';
+                }, 3000);
+            }
+        }
+
+        form.addEventListener('submit', (event) => {
+            saveTask(event).catch((error) => {
+                flashMessage(error.message || 'Unable to save task', true);
+            });
+        });
+
+        cancelBtn.addEventListener('click', resetForm);
+
+        refreshTasks().catch((error) => flashMessage(error.message, true));
+    </script>
+</body>
+</html>
