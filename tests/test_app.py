@@ -229,3 +229,30 @@ def test_task_api_fields_match_db_and_ui_expectations(client: TestClient):
         "time_estimate_shopping_minutes",
     }
     assert db_fields.issubset(columns)
+
+
+def test_reorder_tasks_updates_priorities(client: TestClient):
+    client.put("/locations/home", json={"name": "HQ", "address": "100 Main St"})
+    ids = []
+    for name, duration in [
+        ("Alpha", 30),
+        ("Beta", 25),
+        ("Gamma", 20),
+    ]:
+        resp = client.post(
+            "/tasks",
+            json={"title": name, "priority": 1, "duration_minutes": duration},
+        )
+        ids.append(resp.json()["id"])
+
+    # Simulate dragging Gamma to top, then Beta, then Alpha at bottom
+    new_order = [ids[2], ids[1], ids[0]]
+    total = len(new_order)
+    for index, task_id in enumerate(new_order):
+        desired_priority = total - index
+        resp = client.patch(f"/tasks/{task_id}", json={"priority": desired_priority})
+        assert resp.status_code == 200
+
+    tasks = client.get("/tasks").json()
+    order_ids = [task["id"] for task in tasks]
+    assert order_ids == new_order

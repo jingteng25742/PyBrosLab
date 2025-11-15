@@ -470,7 +470,7 @@
                 row.dataset.taskId = task.id;
             row.addEventListener('dragstart', handleDragStart);
                 row.addEventListener('dragover', handleDragOver);
-                row.addEventListener('drop', (event) => handleDrop(event, task.id));
+                row.addEventListener('drop', (event) => handleDrop(event));
                 row.addEventListener('dragend', handleDragEnd);
                 row.addEventListener('dragenter', handleDragEnter);
                 row.addEventListener('dragleave', handleDragLeave);
@@ -848,16 +848,14 @@
             if (!dragSourceId || dragSourceId === targetId.toString()) {
                 return;
             }
-            const tasks = await fetchTasks();
-            const sourceIndex = tasks.findIndex((t) => t.id.toString() === dragSourceId);
-            const targetIndex = tasks.findIndex((t) => t.id === targetId);
-            if (sourceIndex === -1 || targetIndex === -1) {
+            const targetRow = event.currentTarget;
+            const draggedRow = document.querySelector(`tr[data-task-id="${dragSourceId}"]`);
+            if (!targetRow || !draggedRow || draggedRow === targetRow) {
                 return;
             }
-            const reordered = [...tasks];
-            const [moved] = reordered.splice(sourceIndex, 1);
-            reordered.splice(targetIndex, 0, moved);
-            await persistOrder(reordered);
+            tasksTableBody.insertBefore(draggedRow, targetRow);
+            const reorderedIds = Array.from(tasksTableBody.querySelectorAll('tr[data-task-id]')).map((row) => Number(row.dataset.taskId));
+            await persistOrderFromIds(reorderedIds);
             await refreshTasks();
         }
 
@@ -874,20 +872,25 @@
             dragSourceId = null;
         }
 
-        async function persistOrder(tasks) {
+        async function persistOrder(taskList) {
             // Highest priority for top row
-            const n = tasks.length;
-            for (let i = 0; i < tasks.length; i += 1) {
+            const n = taskList.length;
+            for (let i = 0; i < n; i += 1) {
                 const desiredPriority = n - i;
-                if (tasks[i].priority === desiredPriority) {
+                if (taskList[i].priority === desiredPriority) {
                     continue;
                 }
-                await fetch(`/tasks/${tasks[i].id}`, {
+                await fetch(`/tasks/${taskList[i].id}`, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ priority: desiredPriority }),
                 });
             }
+        }
+
+        async function persistOrderFromIds(ids) {
+            const tasks = ids.map((id) => ({ id }));
+            await persistOrder(tasks);
         }
 
         async function updateTaskLocationInline(taskId, newLocation) {
