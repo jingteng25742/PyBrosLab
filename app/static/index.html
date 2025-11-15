@@ -159,6 +159,13 @@
             min-height: 1.2em;
         }
 
+        #planned-route-list {
+            margin: 0;
+            padding-left: 1.25rem;
+            color: #0f172a;
+            font-weight: 500;
+        }
+
         .suggestions-list {
             margin: 0.5rem 0 0;
             padding-left: 1rem;
@@ -308,6 +315,11 @@
                     <button class="primary" type="submit">Save Home</button>
                 </form>
                 <div id="home-status"></div>
+            </div>
+
+            <h2>Planned Route</h2>
+            <div class="card">
+                <ol id="planned-route-list"></ol>
             </div>
 
             <h2>Existing Tasks</h2>
@@ -464,6 +476,8 @@
             updateHomeToggleAvailability(hasAddress);
         }
 
+        const plannedRouteList = document.getElementById('planned-route-list');
+
         function renderTasks(tasks) {
             if (!tasks.length) {
                 tasksTableBody.innerHTML = '<tr><td colspan="7">No tasks yet. Add one above!</td></tr>';
@@ -579,6 +593,26 @@
                 );
                 tasksTableBody.appendChild(row);
             });
+            updatePlannedRoute(tasks);
+        }
+
+        function updatePlannedRoute(tasks) {
+            plannedRouteList.innerHTML = '';
+            const seen = new Set();
+            tasks.forEach((task) => {
+                const location = task.location || '';
+                if (!location || seen.has(location)) {
+                    return;
+                }
+                seen.add(location);
+                const li = document.createElement('li');
+                li.textContent = formatLocationSummary(location);
+                li.title = location;
+                plannedRouteList.appendChild(li);
+            });
+            if (!tasks.length) {
+                plannedRouteList.innerHTML = '<li>Plan a task to build a route.</li>';
+            }
         }
 
         function beginEdit(task) {
