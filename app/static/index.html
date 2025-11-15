@@ -474,9 +474,15 @@
             homeAddressInput.value = home.address || '';
             const hasAddress = Boolean(home.address && home.address.trim());
             updateHomeToggleAvailability(hasAddress);
+            homeRouteLabel = formatLocationSummary(home.address || home.name);
+            cachedHomeAddress = home.address || '';
+            updatePlannedRoute(tasksCache);
         }
 
         const plannedRouteList = document.getElementById('planned-route-list');
+        let tasksCache = [];
+        let homeRouteLabel = 'Home';
+        let cachedHomeAddress = '';
 
         function renderTasks(tasks) {
             if (!tasks.length) {
@@ -591,27 +597,41 @@
                     locationCell,
                     actionCell,
                 );
-                tasksTableBody.appendChild(row);
+            tasksTableBody.appendChild(row);
             });
+            tasksCache = tasks;
             updatePlannedRoute(tasks);
         }
 
         function updatePlannedRoute(tasks) {
             plannedRouteList.innerHTML = '';
             const seen = new Set();
+            const addRoutePoint = (label, title) => {
+                const item = document.createElement('li');
+                item.textContent = label;
+                if (title) {
+                    item.title = title;
+                }
+                plannedRouteList.appendChild(item);
+            };
+
+            if (homeRouteLabel) {
+                addRoutePoint(homeRouteLabel, cachedHomeAddress);
+            }
+
             tasks.forEach((task) => {
                 const location = task.location || '';
                 if (!location || seen.has(location)) {
                     return;
                 }
                 seen.add(location);
-                const li = document.createElement('li');
-                li.textContent = formatLocationSummary(location);
-                li.title = location;
-                plannedRouteList.appendChild(li);
+                addRoutePoint(formatLocationSummary(location), location);
             });
-            if (!tasks.length) {
-                plannedRouteList.innerHTML = '<li>Plan a task to build a route.</li>';
+
+            if (homeRouteLabel) {
+                addRoutePoint(homeRouteLabel, cachedHomeAddress);
+            } else if (!plannedRouteList.children.length) {
+                addRoutePoint('Set up home location', '');
             }
         }
 
