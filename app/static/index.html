@@ -25,7 +25,7 @@
 
         main {
             padding: 2rem;
-            max-width: 960px;
+            max-width: 1200px;
             margin: 0 auto;
         }
 
@@ -123,6 +123,31 @@
             justify-content: center;
             cursor: pointer;
             font-size: 1.2rem;
+        }
+
+        .drag-handle {
+            cursor: grab;
+            font-size: 1rem;
+            padding: 0.4rem 0.6rem;
+            border: 1px dashed #d1d5db;
+            border-radius: 6px;
+            background: #f9fafb;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        tr.dragging {
+            opacity: 0.6;
+        }
+
+        .inline-select {
+            width: 100%;
+            min-width: 260px;
+            padding: 0.5rem;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            background: #fff;
         }
 
         .hint {
@@ -248,7 +273,7 @@
                 <input id="duration_minutes" name="duration_minutes" type="number" min="15" max="240" value="60" required />
 
                 <label for="location">Location</label>
-                <input id="location" name="location" type="text" placeholder="Optional" />
+                <select id="location" name="location"></select>
                 <small id="location-hint" class="hint"></small>
 
                 <label for="due_date">Due Date</label>
@@ -287,21 +312,19 @@
             <table id="tasks-table" class="card">
                 <thead>
                     <tr>
+                        <th></th>
                         <th>Title</th>
-                        <th>Priority</th>
                         <th>Time Estimate</th>
                         <th>Time (Home → Task)</th>
                         <th>Shopping Time</th>
                         <th>Time (Task → Home)</th>
                         <th>Location</th>
-                        <th>Status</th>
-                        <th>Due</th>
                         <th></th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr>
-                        <td colspan="10">Loading tasks...</td>
+                        <td colspan="8">Loading tasks...</td>
                     </tr>
                 </tbody>
             </table>
@@ -311,12 +334,18 @@
     <script>
         const form = document.getElementById('task-form');
         const tasksTableBody = document.querySelector('#tasks-table tbody');
+        tasksTableBody.addEventListener('dragover', handleDragOver);
+        tasksTableBody.addEventListener('drop', async (event) => {
+            const row = event.target.closest('tr');
+            if (!row) return;
+            await handleDrop(event, Number(row.dataset.taskId));
+        });
         const submitBtn = document.getElementById('submit-btn');
         const cancelBtn = document.getElementById('cancel-btn');
         const formHeading = document.getElementById('form-heading');
         const statusMessage = document.getElementById('status-message');
         const titleInput = document.getElementById('title');
-        const locationInput = document.getElementById('location');
+        const locationSelect = document.getElementById('location');
         const locationHint = document.getElementById('location-hint');
         const homeForm = document.getElementById('home-form');
         const homeStatus = document.getElementById('home-status');
@@ -430,21 +459,32 @@
 
         function renderTasks(tasks) {
             if (!tasks.length) {
-                tasksTableBody.innerHTML = '<tr><td colspan="10">No tasks yet. Add one above!</td></tr>';
+                tasksTableBody.innerHTML = '<tr><td colspan="7">No tasks yet. Add one above!</td></tr>';
                 return;
             }
 
             tasksTableBody.innerHTML = '';
             tasks.forEach((task) => {
                 const row = document.createElement('tr');
+                row.draggable = true;
+                row.dataset.taskId = task.id;
+            row.addEventListener('dragstart', handleDragStart);
+                row.addEventListener('dragover', handleDragOver);
+                row.addEventListener('drop', (event) => handleDrop(event, task.id));
+                row.addEventListener('dragend', handleDragEnd);
+                row.addEventListener('dragenter', handleDragEnter);
+                row.addEventListener('dragleave', handleDragLeave);
+                row.classList.remove('drag-over');
+
+                const dragCell = document.createElement('td');
+                const dragHandle = document.createElement('span');
+                dragHandle.className = 'drag-handle';
+                dragHandle.textContent = '⇅';
+                dragCell.appendChild(dragHandle);
 
                 const titleCell = document.createElement('td');
                 titleCell.dataset.label = 'Title';
                 titleCell.textContent = task.title;
-
-                const priorityCell = document.createElement('td');
-                priorityCell.dataset.label = 'Priority';
-                priorityCell.textContent = task.priority;
 
                 const totalCell = document.createElement('td');
                 totalCell.dataset.label = 'Time Estimate';
@@ -464,31 +504,39 @@
 
                 const locationCell = document.createElement('td');
                 locationCell.dataset.label = 'Location';
-                const locationText = document.createElement('div');
-                locationText.textContent = task.location || 'n/a';
-                locationCell.appendChild(locationText);
-                if (Array.isArray(task.location_suggestions) && task.location_suggestions.length) {
-                    const list = document.createElement('ul');
-                    list.className = 'suggestions-list';
-                    task.location_suggestions.forEach((suggestion) => {
-                        const item = document.createElement('li');
-                        const address = suggestion.address ? ` — ${suggestion.address}` : '';
-                        item.textContent = `${suggestion.label}${address}`;
-                        list.appendChild(item);
+
+                const locationSelectDisplay = document.createElement('select');
+                locationSelectDisplay.className = 'inline-select';
+                const seenLocations = new Set();
+
+                const addOption = (label, value, title) => {
+                    if (!value || seenLocations.has(value)) return;
+                    seenLocations.add(value);
+                    const opt = document.createElement('option');
+                    opt.value = value;
+                    opt.textContent = label || value;
+                    if (title) opt.title = title;
+                    locationSelectDisplay.appendChild(opt);
+                };
+
+                addOption(formatLocationSummary(task.location), task.location, task.location);
+                if (Array.isArray(task.location_suggestions)) {
+                    task.location_suggestions.forEach((s) => {
+                        const value = s.address || s.label;
+                        addOption(s.label || value, value, s.address || value);
                     });
-                    locationCell.appendChild(list);
                 }
 
-                const statusCell = document.createElement('td');
-                statusCell.dataset.label = 'Status';
-                const pill = document.createElement('span');
-                pill.className = `status-pill status-${task.status}`;
-                pill.textContent = task.status;
-                statusCell.appendChild(pill);
+                if (task.location) {
+                    locationSelectDisplay.value = task.location;
+                }
 
-                const dueCell = document.createElement('td');
-                dueCell.dataset.label = 'Due';
-                dueCell.textContent = task.due_date ? new Date(task.due_date).toLocaleString() : 'n/a';
+                locationSelectDisplay.addEventListener('change', () => {
+                    const newValue = locationSelectDisplay.value;
+                    updateTaskLocationInline(task.id, newValue);
+                });
+
+                locationCell.appendChild(locationSelectDisplay);
 
                 const actionCell = document.createElement('td');
                 actionCell.dataset.label = 'Actions';
@@ -513,15 +561,13 @@
                 actionCell.appendChild(actionsWrapper);
 
                 row.append(
+                    dragCell,
                     titleCell,
-                    priorityCell,
                     totalCell,
                     driveToCell,
                     shoppingCell,
                     driveBackCell,
                     locationCell,
-                    statusCell,
-                    dueCell,
                     actionCell,
                 );
                 tasksTableBody.appendChild(row);
@@ -538,8 +584,9 @@
             form.description.value = task.description || '';
             form.priority.value = task.priority;
             form.duration_minutes.value = task.duration_minutes;
-            form.location.value = task.location || '';
-            locationInput.dataset.userEdited = task.location ? 'true' : 'false';
+            const options = buildLocationOptions(task);
+            setLocationOptions(options, task.location || '');
+            locationSelect.dataset.userEdited = task.location ? 'true' : 'false';
             locationHint.textContent = '';
             form.due_date.value = task.due_date ? task.due_date.slice(0, 16) : '';
         }
@@ -552,7 +599,8 @@
             formHeading.textContent = 'Add a New Task';
             submitBtn.textContent = 'Add Task';
             cancelBtn.hidden = true;
-            locationInput.dataset.userEdited = 'false';
+            setLocationOptions([], '');
+            locationSelect.dataset.userEdited = 'false';
             locationHint.textContent = '';
         }
 
@@ -575,13 +623,13 @@
             const url = editingId ? `/tasks/${editingId}` : '/tasks';
             const method = editingId ? 'PATCH' : 'POST';
 
-            const response = await fetch(url, {
-                method,
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(payload)
-            });
+                const response = await fetch(url, {
+                    method,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
 
             if (!response.ok) {
                 const errorText = await response.text();
@@ -598,7 +646,7 @@
                 const tasks = await fetchTasks();
                 renderTasks(tasks);
             } catch (error) {
-                tasksTableBody.innerHTML = `<tr><td colspan="10">${error.message}</td></tr>`;
+                tasksTableBody.innerHTML = `<tr><td colspan="7">${error.message}</td></tr>`;
             }
         }
 
@@ -645,11 +693,11 @@
         titleInput.addEventListener('input', () => {
             scheduleLocationInference();
         });
-        locationInput.addEventListener('input', () => {
-            if (locationInput.value.trim()) {
-                locationInput.dataset.userEdited = 'true';
+        locationSelect.addEventListener('change', () => {
+            if (locationSelect.value) {
+                locationSelect.dataset.userEdited = 'true';
             } else {
-                locationInput.dataset.userEdited = 'false';
+                locationSelect.dataset.userEdited = 'false';
             }
             locationHint.textContent = '';
         });
@@ -708,7 +756,7 @@
             if (!text) {
                 return;
             }
-            if (locationInput.dataset.userEdited === 'true') {
+            if (locationSelect.dataset.userEdited === 'true') {
                 return;
             }
             clearTimeout(locationInferenceTimeout);
@@ -738,21 +786,16 @@
                     return;
                 }
                 const suggestions = await response.json();
-                if (Array.isArray(suggestions) && suggestions.length && locationInput.dataset.userEdited !== 'true') {
+                if (Array.isArray(suggestions) && suggestions.length && locationSelect.dataset.userEdited !== 'true') {
                     const preferred = suggestions.find((s) => s.address) || suggestions[0];
-                    const valueParts = [];
-                    if (preferred.label) {
-                        valueParts.push(preferred.label);
-                    }
-                    if (preferred.address) {
-                        valueParts.push(preferred.address);
-                    }
-                    const value = valueParts.join(' — ');
-                    if (value) {
-                        locationInput.value = value;
-                        locationInput.dataset.userEdited = 'false';
-                        locationHint.textContent = `Auto-filled from ${preferred.label || 'inference'}`;
-                    }
+                    const options = suggestions.map((s) => ({
+                        label: s.label || s.address || 'Suggested location',
+                        value: s.address || s.label || '',
+                        title: s.address || '',
+                    }));
+                    setLocationOptions(options, preferred.address || preferred.label || '');
+                    locationSelect.dataset.userEdited = 'false';
+                    locationHint.textContent = `Auto-filled from ${preferred.label || 'inference'}`;
                 }
             } catch (error) {
                 if (error.name !== 'AbortError') {
@@ -785,6 +828,86 @@
             await refreshTasks();
         }
 
+        let dragSourceId = null;
+
+        function handleDragStart(event) {
+            dragSourceId = event.currentTarget.dataset.taskId;
+            event.currentTarget.classList.add('dragging');
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', dragSourceId);
+        }
+
+        function handleDragOver(event) {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+        }
+
+        async function handleDrop(event, targetId) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!dragSourceId || dragSourceId === targetId.toString()) {
+                return;
+            }
+            const tasks = await fetchTasks();
+            const sourceIndex = tasks.findIndex((t) => t.id.toString() === dragSourceId);
+            const targetIndex = tasks.findIndex((t) => t.id === targetId);
+            if (sourceIndex === -1 || targetIndex === -1) {
+                return;
+            }
+            const reordered = [...tasks];
+            const [moved] = reordered.splice(sourceIndex, 1);
+            reordered.splice(targetIndex, 0, moved);
+            await persistOrder(reordered);
+            await refreshTasks();
+        }
+
+        function handleDragEnter(event) {
+            event.currentTarget.classList.add('drag-over');
+        }
+
+        function handleDragLeave(event) {
+            event.currentTarget.classList.remove('drag-over');
+        }
+
+        function handleDragEnd(event) {
+            event.currentTarget.classList.remove('dragging');
+            dragSourceId = null;
+        }
+
+        async function persistOrder(tasks) {
+            // Highest priority for top row
+            const n = tasks.length;
+            for (let i = 0; i < tasks.length; i += 1) {
+                const desiredPriority = n - i;
+                if (tasks[i].priority === desiredPriority) {
+                    continue;
+                }
+                await fetch(`/tasks/${tasks[i].id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ priority: desiredPriority }),
+                });
+            }
+        }
+
+        async function updateTaskLocationInline(taskId, newLocation) {
+            try {
+                const response = await fetch(`/tasks/${taskId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ location: newLocation }),
+                });
+                if (!response.ok) {
+                    const text = await response.text();
+                    throw new Error(text || 'Failed to update location');
+                }
+                flashMessage('Location updated');
+            } catch (error) {
+                flashMessage(error.message || 'Failed to update location', true);
+                await refreshTasks();
+            }
+        }
+
         function formatMinutes(totalMinutes) {
             if (totalMinutes == null || Number.isNaN(totalMinutes)) {
                 return 'n/a';
@@ -799,6 +922,66 @@
                 return `${hours} hr${hours > 1 ? 's' : ''}`;
             }
             return `${hours} hr${hours > 1 ? 's' : ''} ${remainder} min`;
+        }
+
+        function formatLocationSummary(address) {
+            if (!address) {
+                return 'n/a';
+            }
+            const dashSplit = address.split('—');
+            if (dashSplit.length > 1) {
+                return dashSplit[0].trim();
+            }
+            const mainSplit = address.split('-');
+            if (mainSplit.length > 1) {
+                return mainSplit[0].trim();
+            }
+            const parts = address.split(',').map((p) => p.trim()).filter(Boolean);
+            if (parts.length >= 1) {
+                return parts[0];
+            }
+            return address;
+        }
+
+        function setLocationOptions(options, selectedValue) {
+            locationSelect.innerHTML = '';
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = 'Select location';
+            locationSelect.appendChild(placeholder);
+
+            const seen = new Set();
+            options.forEach((opt) => {
+                const value = opt.value || '';
+                if (!value || seen.has(value)) {
+                    return;
+                }
+                seen.add(value);
+                const optionEl = document.createElement('option');
+                optionEl.value = value;
+                optionEl.textContent = opt.label || value;
+                if (opt.title) {
+                    optionEl.title = opt.title;
+                }
+                locationSelect.appendChild(optionEl);
+            });
+
+            locationSelect.value = selectedValue || '';
+        }
+
+        function buildLocationOptions(task) {
+            const options = [];
+            if (task.location) {
+                options.push({ label: formatLocationSummary(task.location), value: task.location, title: task.location });
+            }
+            if (Array.isArray(task.location_suggestions)) {
+                task.location_suggestions.forEach((s) => {
+                    const value = s.address || s.label;
+                    if (!value) return;
+                    options.push({ label: s.label || value, value, title: s.address || value });
+                });
+            }
+            return options;
         }
     </script>
 </body>
