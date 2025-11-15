@@ -274,6 +274,8 @@
 
                 <label for="location">Location</label>
                 <select id="location" name="location"></select>
+                <small><a href="#" id="location-custom-link">Enter custom address</a></small>
+                <input id="location-custom" name="location_custom" type="text" placeholder="Custom address" hidden />
                 <small id="location-hint" class="hint"></small>
 
                 <label for="due_date">Due Date</label>
@@ -347,6 +349,10 @@
         const titleInput = document.getElementById('title');
         const locationSelect = document.getElementById('location');
         const locationHint = document.getElementById('location-hint');
+        const locationCustomLink = document.getElementById('location-custom-link');
+        const locationCustomInput = document.getElementById('location-custom');
+        const locationCustomLink = document.getElementById('location-custom-link');
+        const locationCustomInput = document.getElementById('location-custom');
         const homeForm = document.getElementById('home-form');
         const homeStatus = document.getElementById('home-status');
         const homeSummary = document.getElementById('home-summary');
@@ -354,6 +360,7 @@
         const homeAddressInput = document.getElementById('home-address');
         const homeCard = document.getElementById('home-card');
         const toggleHomeButton = document.getElementById('toggle-home');
+        const CUSTOM_LOCATION_VALUE = '__custom__';
         let editingId = null;
         let placesAutocomplete;
         let homeCollapsed = false;
@@ -602,6 +609,7 @@
             setLocationOptions([], '');
             locationSelect.dataset.userEdited = 'false';
             locationHint.textContent = '';
+            hideCustomLocation();
         }
 
         async function saveTask(event) {
@@ -614,6 +622,15 @@
 
             if (!payload.due_date) {
                 delete payload.due_date;
+            }
+
+            if (locationSelect.value === CUSTOM_LOCATION_VALUE) {
+                const manualValue = locationCustomInput.value.trim();
+                if (manualValue) {
+                    payload.location = manualValue;
+                } else {
+                    delete payload.location;
+                }
             }
 
             if (!payload.location) {
@@ -694,13 +711,28 @@
             scheduleLocationInference();
         });
         locationSelect.addEventListener('change', () => {
-            if (locationSelect.value) {
+            if (locationSelect.value === CUSTOM_LOCATION_VALUE) {
+                showCustomLocation();
                 locationSelect.dataset.userEdited = 'true';
             } else {
-                locationSelect.dataset.userEdited = 'false';
+                hideCustomLocation();
+                locationSelect.dataset.userEdited = 'true';
             }
             locationHint.textContent = '';
         });
+        locationCustomLink.addEventListener('click', (event) => {
+            event.preventDefault();
+            locationSelect.value = CUSTOM_LOCATION_VALUE;
+            showCustomLocation();
+            locationSelect.dataset.userEdited = 'true';
+            locationHint.textContent = '';
+        });
+        locationCustomInput.addEventListener('input', () => {
+            if (locationCustomInput.value.trim()) {
+                locationSelect.dataset.userEdited = 'true';
+            }
+        });
+        hideCustomLocation();
         homeForm.addEventListener('submit', (event) => {
             event.preventDefault();
             const payload = {
@@ -946,7 +978,7 @@
             return address;
         }
 
-        function setLocationOptions(options, selectedValue) {
+        function setLocationOptions(options, selectedValue, forceCustom = false) {
             locationSelect.innerHTML = '';
             const placeholder = document.createElement('option');
             placeholder.value = '';
@@ -966,10 +998,33 @@
                 if (opt.title) {
                     optionEl.title = opt.title;
                 }
-                locationSelect.appendChild(optionEl);
-            });
+            locationSelect.appendChild(optionEl);
+        });
+
+            const customOption = document.createElement('option');
+            customOption.value = CUSTOM_LOCATION_VALUE;
+            customOption.textContent = 'Manual address';
+            locationSelect.appendChild(customOption);
 
             locationSelect.value = selectedValue || '';
+            if (forceCustom || selectedValue === CUSTOM_LOCATION_VALUE) {
+                locationSelect.value = CUSTOM_LOCATION_VALUE;
+                showCustomLocation();
+            } else {
+                hideCustomLocation();
+            }
+        }
+
+        function showCustomLocation() {
+            locationCustomInput.hidden = false;
+            locationCustomInput.focus();
+            locationCustomLink.textContent = 'Hide custom address';
+        }
+
+        function hideCustomLocation() {
+            locationCustomInput.hidden = true;
+            locationCustomInput.value = '';
+            locationCustomLink.textContent = 'Enter custom address';
         }
 
         function buildLocationOptions(task) {
