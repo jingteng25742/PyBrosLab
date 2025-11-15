@@ -166,6 +166,13 @@
             font-weight: 500;
         }
 
+        #planned-route-map {
+            width: 100%;
+            height: 360px;
+            border-radius: 12px;
+            margin-bottom: 1rem;
+        }
+
         .suggestions-list {
             margin: 0.5rem 0 0;
             padding-left: 1rem;
@@ -319,6 +326,7 @@
 
             <h2>Planned Route</h2>
             <div class="card">
+                <div id="planned-route-map"></div>
                 <ol id="planned-route-list"></ol>
             </div>
 
@@ -363,8 +371,6 @@
         const locationHint = document.getElementById('location-hint');
         const locationCustomLink = document.getElementById('location-custom-link');
         const locationCustomInput = document.getElementById('location-custom');
-        const locationCustomLink = document.getElementById('location-custom-link');
-        const locationCustomInput = document.getElementById('location-custom');
         const homeForm = document.getElementById('home-form');
         const homeStatus = document.getElementById('home-status');
         const homeSummary = document.getElementById('home-summary');
@@ -378,6 +384,10 @@
         let homeCollapsed = false;
         let locationInferenceTimeout;
         let locationInferenceController;
+        const plannedRouteMapEl = document.getElementById('planned-route-map');
+        let directionsService = null;
+        let directionsRenderer = null;
+        let mapInitialized = false;
 
         async function loadClientConfig() {
             const response = await fetch('/client/config');
@@ -601,6 +611,7 @@
             });
             tasksCache = tasks;
             updatePlannedRoute(tasks);
+            renderRouteMap(tasks);
         }
 
         function updatePlannedRoute(tasks) {
@@ -829,7 +840,10 @@
         loadClientConfig()
             .then((config) => {
                 if (config.google_maps_api_key) {
-                    return loadPlacesScript(config.google_maps_api_key).then(initAddressAutocomplete);
+                    return loadPlacesScript(config.google_maps_api_key).then(() => {
+                        initRouteMap();
+                        initAddressAutocomplete();
+                    });
                 }
                 return null;
             })
@@ -943,6 +957,47 @@
             const reorderedIds = Array.from(tasksTableBody.querySelectorAll('tr[data-task-id]')).map((row) => Number(row.dataset.taskId));
             await persistOrderFromIds(reorderedIds);
             await refreshTasks();
+        }
+
+        function initRouteMap() {
+            if (!plannedRouteMapEl || !window.google) {
+                return;
+            }
+            const map = new google.maps.Map(plannedRouteMapEl, {
+                zoom: 12,
+                center: { lat: 42.3601, lng: -71.0589 },
+            });
+            directionsService = new google.maps.DirectionsService();
+            directionsRenderer = new google.maps.DirectionsRenderer({ map });
+            mapInitialized = true;
+        }
+
+        function renderRouteMap(tasks) {
+            if (!mapInitialized || !directionsService || !directionsRenderer || !cachedHomeAddress) {
+                return;
+            }
+            const stops = tasks.filter((task) => task.location);
+            if (!stops.length) {
+                directionsRenderer.set('directions', null);
+                return;
+            }
+            const waypoints = stops.map((task) => ({
+                location: task.location,
+                stopover: true,
+            }));
+            directionsService.route(
+                {
+                    origin: cachedHomeAddress,
+                    destination: cachedHomeAddress,
+                    travelMode: google.maps.TravelMode.DRIVING,
+                    waypoints,
+                },
+                (result, status) => {
+                    if (status === 'OK') {
+                        directionsRenderer.setDirections(result);
+                    }
+                },
+            );
         }
 
         function handleDragEnter(event) {

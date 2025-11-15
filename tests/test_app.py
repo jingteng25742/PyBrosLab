@@ -256,3 +256,12 @@ def test_reorder_tasks_updates_priorities(client: TestClient):
     tasks = client.get("/tasks").json()
     order_ids = [task["id"] for task in tasks]
     assert order_ids == new_order
+
+
+def test_tasks_endpoint_returns_list(client: TestClient):
+    response = client.get("/tasks")
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, list)
+    # Ensure list response matches expectation (UI expects array, not text)
+    assert data == sorted(data, key=lambda t: -t["priority"])
