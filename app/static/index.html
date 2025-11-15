@@ -33,13 +33,38 @@
             margin-top: 0;
         }
 
-        form {
+        .card {
             background: #ffffff;
             border: 1px solid #d2d6dc;
             border-radius: 8px;
             padding: 1.5rem;
             margin-bottom: 2rem;
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
+        }
+
+        .card.collapsible {
+            transition: border-color 0.2s ease;
+        }
+
+        form {
+            margin-bottom: 0;
+        }
+
+        .home-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 1rem;
+        }
+
+        #home-summary {
+            margin: 0.3rem 0 0;
+            color: #4b5563;
+        }
+
+        #home-card.collapsed form,
+        #home-card.collapsed #home-status {
+            display: none;
         }
 
         label {
@@ -79,6 +104,45 @@
             background-color: #9ca3af;
             color: #111827;
             margin-left: 0.5rem;
+        }
+
+        .actions {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+
+        .icon-button {
+            background: #f3f4f6;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            width: 2.5rem;
+            height: 2.5rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 1.2rem;
+        }
+
+        .hint {
+            display: block;
+            margin-top: -0.5rem;
+            margin-bottom: 1rem;
+            font-size: 0.85rem;
+            color: #6b7280;
+            min-height: 1.2em;
+        }
+
+        .suggestions-list {
+            margin: 0.5rem 0 0;
+            padding-left: 1rem;
+            color: #4b5563;
+            font-size: 0.9rem;
+        }
+
+        .suggestions-list li {
+            margin: 0.2rem 0;
         }
 
         table {
@@ -170,7 +234,7 @@
     <main>
         <section>
             <h2 id="form-heading">Add a New Task</h2>
-            <form id="task-form">
+            <form id="task-form" class="card">
                 <label for="title">Title</label>
                 <input id="title" name="title" type="text" placeholder="Task name" required />
 
@@ -185,6 +249,7 @@
 
                 <label for="location">Location</label>
                 <input id="location" name="location" type="text" placeholder="Optional" />
+                <small id="location-hint" class="hint"></small>
 
                 <label for="due_date">Due Date</label>
                 <input id="due_date" name="due_date" type="datetime-local" />
@@ -198,13 +263,37 @@
         </section>
 
         <section>
+            <div class="card collapsible" id="home-card">
+                <div class="home-card-header">
+                    <div>
+                        <h2>Home Location</h2>
+                        <p id="home-summary">Loading home base...</p>
+                    </div>
+                    <button type="button" class="secondary" id="toggle-home" hidden>Hide</button>
+                </div>
+                <form id="home-form">
+                    <label for="home-name">Name</label>
+                    <input id="home-name" name="name" type="text" placeholder="Home Base" required />
+
+                    <label for="home-address">Address</label>
+                    <input id="home-address" name="address" type="text" placeholder="Street, City" />
+
+                    <button class="primary" type="submit">Save Home</button>
+                </form>
+                <div id="home-status"></div>
+            </div>
+
             <h2>Existing Tasks</h2>
-            <table id="tasks-table">
+            <table id="tasks-table" class="card">
                 <thead>
                     <tr>
                         <th>Title</th>
                         <th>Priority</th>
-                        <th>Duration</th>
+                        <th>Time Estimate</th>
+                        <th>Time (Home → Task)</th>
+                        <th>Shopping Time</th>
+                        <th>Time (Task → Home)</th>
+                        <th>Location</th>
                         <th>Status</th>
                         <th>Due</th>
                         <th></th>
@@ -212,7 +301,7 @@
                 </thead>
                 <tbody>
                     <tr>
-                        <td colspan="6">Loading tasks...</td>
+                        <td colspan="10">Loading tasks...</td>
                     </tr>
                 </tbody>
             </table>
@@ -226,7 +315,98 @@
         const cancelBtn = document.getElementById('cancel-btn');
         const formHeading = document.getElementById('form-heading');
         const statusMessage = document.getElementById('status-message');
+        const titleInput = document.getElementById('title');
+        const locationInput = document.getElementById('location');
+        const locationHint = document.getElementById('location-hint');
+        const homeForm = document.getElementById('home-form');
+        const homeStatus = document.getElementById('home-status');
+        const homeSummary = document.getElementById('home-summary');
+        const homeNameInput = document.getElementById('home-name');
+        const homeAddressInput = document.getElementById('home-address');
+        const homeCard = document.getElementById('home-card');
+        const toggleHomeButton = document.getElementById('toggle-home');
         let editingId = null;
+        let placesAutocomplete;
+        let homeCollapsed = false;
+        let locationInferenceTimeout;
+        let locationInferenceController;
+
+        async function loadClientConfig() {
+            const response = await fetch('/client/config');
+            if (!response.ok) {
+                throw new Error('Unable to fetch client config');
+            }
+            return response.json();
+        }
+
+        function loadPlacesScript(apiKey) {
+            return new Promise((resolve, reject) => {
+                if (document.getElementById('google-places-script')) {
+                    if (window.google && window.google.maps && window.google.maps.places) {
+                        resolve();
+                    } else {
+                        document.getElementById('google-places-script').addEventListener('load', resolve);
+                    }
+                    return;
+                }
+
+                const script = document.createElement('script');
+                script.id = 'google-places-script';
+                script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
+                script.async = true;
+                script.defer = true;
+                script.onload = resolve;
+                script.onerror = () => reject(new Error('Failed to load Google Maps Places API'));
+                document.head.appendChild(script);
+            });
+        }
+
+        function initAddressAutocomplete() {
+            if (!window.google || !google.maps || !google.maps.places) {
+                return;
+            }
+            placesAutocomplete = new google.maps.places.Autocomplete(homeAddressInput, {
+                types: ['geocode'],
+                fields: ['formatted_address', 'name'],
+            });
+            placesAutocomplete.addListener('place_changed', () => {
+                const place = placesAutocomplete.getPlace();
+                if (place.formatted_address) {
+                    homeAddressInput.value = place.formatted_address;
+                }
+                if (place.name && !homeNameInput.value) {
+                    homeNameInput.value = place.name;
+                }
+            });
+        }
+
+        function setHomeCollapsed(collapsed) {
+            homeCollapsed = collapsed;
+            homeCard.classList.toggle('collapsed', collapsed);
+            toggleHomeButton.textContent = collapsed ? 'Show Home' : 'Hide Home';
+            try {
+                localStorage.setItem('homeCollapsed', collapsed ? '1' : '0');
+            } catch (error) {
+                console.warn('Unable to persist home collapse state', error);
+            }
+        }
+
+        function updateHomeToggleAvailability(hasAddress) {
+            if (!hasAddress) {
+                toggleHomeButton.hidden = true;
+                setHomeCollapsed(false);
+            } else {
+                toggleHomeButton.hidden = false;
+            }
+        }
+
+        async function fetchHomeLocation() {
+            const response = await fetch('/locations/home');
+            if (!response.ok) {
+                throw new Error('Failed to load home location');
+            }
+            return response.json();
+        }
 
         async function fetchTasks() {
             const response = await fetch('/tasks');
@@ -236,9 +416,21 @@
             return response.json();
         }
 
+        function renderHome(home) {
+            const pieces = [home.name];
+            if (home.address) {
+                pieces.push(home.address);
+            }
+            homeSummary.textContent = pieces.filter(Boolean).join(' • ');
+            homeNameInput.value = home.name || '';
+            homeAddressInput.value = home.address || '';
+            const hasAddress = Boolean(home.address && home.address.trim());
+            updateHomeToggleAvailability(hasAddress);
+        }
+
         function renderTasks(tasks) {
             if (!tasks.length) {
-                tasksTableBody.innerHTML = '<tr><td colspan="6">No tasks yet. Add one above!</td></tr>';
+                tasksTableBody.innerHTML = '<tr><td colspan="10">No tasks yet. Add one above!</td></tr>';
                 return;
             }
 
@@ -254,9 +446,38 @@
                 priorityCell.dataset.label = 'Priority';
                 priorityCell.textContent = task.priority;
 
-                const durationCell = document.createElement('td');
-                durationCell.dataset.label = 'Duration';
-                durationCell.textContent = `${task.duration_minutes} min`;
+                const totalCell = document.createElement('td');
+                totalCell.dataset.label = 'Time Estimate';
+                totalCell.textContent = formatMinutes(task.time_estimate_minutes);
+
+                const driveToCell = document.createElement('td');
+                driveToCell.dataset.label = 'Time (Home → Task)';
+                driveToCell.textContent = formatMinutes(task.time_estimate_travel_to_minutes);
+
+                const shoppingCell = document.createElement('td');
+                shoppingCell.dataset.label = 'Shopping Time';
+                shoppingCell.textContent = formatMinutes(task.time_estimate_shopping_minutes);
+
+                const driveBackCell = document.createElement('td');
+                driveBackCell.dataset.label = 'Time (Task → Home)';
+                driveBackCell.textContent = formatMinutes(task.time_estimate_travel_back_minutes);
+
+                const locationCell = document.createElement('td');
+                locationCell.dataset.label = 'Location';
+                const locationText = document.createElement('div');
+                locationText.textContent = task.location || 'n/a';
+                locationCell.appendChild(locationText);
+                if (Array.isArray(task.location_suggestions) && task.location_suggestions.length) {
+                    const list = document.createElement('ul');
+                    list.className = 'suggestions-list';
+                    task.location_suggestions.forEach((suggestion) => {
+                        const item = document.createElement('li');
+                        const address = suggestion.address ? ` — ${suggestion.address}` : '';
+                        item.textContent = `${suggestion.label}${address}`;
+                        list.appendChild(item);
+                    });
+                    locationCell.appendChild(list);
+                }
 
                 const statusCell = document.createElement('td');
                 statusCell.dataset.label = 'Status';
@@ -270,15 +491,39 @@
                 dueCell.textContent = task.due_date ? new Date(task.due_date).toLocaleString() : 'n/a';
 
                 const actionCell = document.createElement('td');
-                actionCell.dataset.label = 'Edit';
+                actionCell.dataset.label = 'Actions';
+                const actionsWrapper = document.createElement('div');
+                actionsWrapper.className = 'actions';
+
                 const editButton = document.createElement('button');
                 editButton.type = 'button';
-                editButton.textContent = 'Edit';
-                editButton.className = 'secondary';
+                editButton.innerHTML = '✏️';
+                editButton.className = 'icon-button';
+                editButton.title = `Edit ${task.title}`;
                 editButton.addEventListener('click', () => beginEdit(task));
-                actionCell.appendChild(editButton);
 
-                row.append(titleCell, priorityCell, durationCell, statusCell, dueCell, actionCell);
+                const deleteButton = document.createElement('button');
+                deleteButton.type = 'button';
+                deleteButton.className = 'icon-button';
+                deleteButton.innerHTML = '🗑️';
+                deleteButton.title = `Delete ${task.title}`;
+                deleteButton.addEventListener('click', () => confirmDelete(task));
+
+                actionsWrapper.append(editButton, deleteButton);
+                actionCell.appendChild(actionsWrapper);
+
+                row.append(
+                    titleCell,
+                    priorityCell,
+                    totalCell,
+                    driveToCell,
+                    shoppingCell,
+                    driveBackCell,
+                    locationCell,
+                    statusCell,
+                    dueCell,
+                    actionCell,
+                );
                 tasksTableBody.appendChild(row);
             });
         }
@@ -294,6 +539,8 @@
             form.priority.value = task.priority;
             form.duration_minutes.value = task.duration_minutes;
             form.location.value = task.location || '';
+            locationInput.dataset.userEdited = task.location ? 'true' : 'false';
+            locationHint.textContent = '';
             form.due_date.value = task.due_date ? task.due_date.slice(0, 16) : '';
         }
 
@@ -305,6 +552,8 @@
             formHeading.textContent = 'Add a New Task';
             submitBtn.textContent = 'Add Task';
             cancelBtn.hidden = true;
+            locationInput.dataset.userEdited = 'false';
+            locationHint.textContent = '';
         }
 
         async function saveTask(event) {
@@ -349,7 +598,17 @@
                 const tasks = await fetchTasks();
                 renderTasks(tasks);
             } catch (error) {
-                tasksTableBody.innerHTML = `<tr><td colspan="6">${error.message}</td></tr>`;
+                tasksTableBody.innerHTML = `<tr><td colspan="10">${error.message}</td></tr>`;
+            }
+        }
+
+        async function refreshHomeLocation() {
+            try {
+                const home = await fetchHomeLocation();
+                renderHome(home);
+            } catch (error) {
+                homeSummary.textContent = error.message;
+                updateHomeToggleAvailability(false);
             }
         }
 
@@ -363,6 +622,16 @@
             }
         }
 
+        function flashHomeMessage(message, isError = false) {
+            homeStatus.textContent = message;
+            homeStatus.style.color = isError ? '#b91c1c' : '#065f46';
+            if (message) {
+                setTimeout(() => {
+                    homeStatus.textContent = '';
+                }, 3000);
+            }
+        }
+
         form.addEventListener('submit', (event) => {
             saveTask(event).catch((error) => {
                 flashMessage(error.message || 'Unable to save task', true);
@@ -370,8 +639,167 @@
         });
 
         cancelBtn.addEventListener('click', resetForm);
+        toggleHomeButton.addEventListener('click', () => {
+            setHomeCollapsed(!homeCollapsed);
+        });
+        titleInput.addEventListener('input', () => {
+            scheduleLocationInference();
+        });
+        locationInput.addEventListener('input', () => {
+            if (locationInput.value.trim()) {
+                locationInput.dataset.userEdited = 'true';
+            } else {
+                locationInput.dataset.userEdited = 'false';
+            }
+            locationHint.textContent = '';
+        });
+        homeForm.addEventListener('submit', (event) => {
+            event.preventDefault();
+            const payload = {
+                name: homeNameInput.value.trim() || 'Home Base',
+                address: homeAddressInput.value.trim() || null,
+            };
+
+            fetch('/locations/home', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then((response) => {
+                if (!response.ok) {
+                    return response.text().then((text) => { throw new Error(text || 'Unable to save home location'); });
+                }
+                return response.json();
+            })
+            .then((home) => {
+                renderHome(home);
+                flashHomeMessage('Home location saved');
+            })
+            .catch((error) => flashHomeMessage(error.message, true));
+        });
 
         refreshTasks().catch((error) => flashMessage(error.message, true));
+        refreshHomeLocation()
+            .then(() => {
+                try {
+                    const storedState = localStorage.getItem('homeCollapsed');
+                    if (storedState === '1') {
+                        setHomeCollapsed(true);
+                    }
+                } catch (error) {
+                    console.warn('Unable to read home collapse state', error);
+                }
+            })
+            .catch((error) => flashHomeMessage(error.message, true));
+
+        loadClientConfig()
+            .then((config) => {
+                if (config.google_maps_api_key) {
+                    return loadPlacesScript(config.google_maps_api_key).then(initAddressAutocomplete);
+                }
+                return null;
+            })
+            .catch((error) => {
+                console.warn('Google Places autocomplete unavailable:', error);
+            });
+
+        function scheduleLocationInference() {
+            const text = titleInput.value.trim();
+            if (!text) {
+                return;
+            }
+            if (locationInput.dataset.userEdited === 'true') {
+                return;
+            }
+            clearTimeout(locationInferenceTimeout);
+            locationInferenceTimeout = setTimeout(() => {
+                runLocationInference(text);
+            }, 350);
+        }
+
+        async function runLocationInference(titleText) {
+            if (!titleText || titleText.length < 4) {
+                return;
+            }
+            if (locationInferenceController) {
+                locationInferenceController.abort();
+            }
+            locationInferenceController = new AbortController();
+            try {
+                const response = await fetch('/tasks/infer-location', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ title: titleText }),
+                    signal: locationInferenceController.signal,
+                });
+                if (!response.ok) {
+                    return;
+                }
+                const suggestions = await response.json();
+                if (Array.isArray(suggestions) && suggestions.length && locationInput.dataset.userEdited !== 'true') {
+                    const preferred = suggestions.find((s) => s.address) || suggestions[0];
+                    const valueParts = [];
+                    if (preferred.label) {
+                        valueParts.push(preferred.label);
+                    }
+                    if (preferred.address) {
+                        valueParts.push(preferred.address);
+                    }
+                    const value = valueParts.join(' — ');
+                    if (value) {
+                        locationInput.value = value;
+                        locationInput.dataset.userEdited = 'false';
+                        locationHint.textContent = `Auto-filled from ${preferred.label || 'inference'}`;
+                    }
+                }
+            } catch (error) {
+                if (error.name !== 'AbortError') {
+                    console.warn('Location inference failed', error);
+                }
+            }
+        }
+
+        function confirmDelete(task) {
+            const confirmed = window.confirm(`Delete "${task.title}"?`);
+            if (!confirmed) {
+                return;
+            }
+            deleteTask(task.id);
+        }
+
+        async function deleteTask(taskId) {
+            const response = await fetch(`/tasks/${taskId}`, {
+                method: 'DELETE',
+            });
+            if (!response.ok) {
+                const errorText = await response.text();
+                flashMessage(errorText || 'Failed to delete task', true);
+                return;
+            }
+            flashMessage('Task deleted');
+            if (editingId === taskId) {
+                resetForm();
+            }
+            await refreshTasks();
+        }
+
+        function formatMinutes(totalMinutes) {
+            if (totalMinutes == null || Number.isNaN(totalMinutes)) {
+                return 'n/a';
+            }
+            const minutes = Number(totalMinutes);
+            if (minutes < 60) {
+                return `${minutes} min`;
+            }
+            const hours = Math.floor(minutes / 60);
+            const remainder = minutes % 60;
+            if (remainder === 0) {
+                return `${hours} hr${hours > 1 ? 's' : ''}`;
+            }
+            return `${hours} hr${hours > 1 ? 's' : ''} ${remainder} min`;
+        }
     </script>
 </body>
 </html>

@@ -32,6 +32,12 @@ class TaskUpdate(BaseModel):
 class TaskRead(TaskBase):
     id: int
     status: str
+    location_suggestions: Sequence["TaskLocationSuggestionRead"] = ()
+    time_estimate_minutes: Optional[int] = None
+    time_estimate_meta: Optional[dict] = None
+    time_estimate_travel_to_minutes: Optional[int] = None
+    time_estimate_travel_back_minutes: Optional[int] = None
+    time_estimate_shopping_minutes: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -59,11 +65,52 @@ class ReminderRead(BaseModel):
         from_attributes = True
 
 
+class TaskLocationSuggestionRead(BaseModel):
+    id: int
+    label: str
+    address: Optional[str] = None
+    source: str
+
+    class Config:
+        from_attributes = True
+
+
+class LocationSuggestionPreview(BaseModel):
+    label: str
+    address: Optional[str] = None
+
+
+class LocationInferenceRequest(BaseModel):
+    title: str
+
+
+class LocationBase(BaseModel):
+    name: str
+    address: Optional[str] = None
+
+
+class LocationRead(LocationBase):
+    id: int
+    is_home: bool
+
+    class Config:
+        from_attributes = True
+
+
+class LocationUpsert(LocationBase):
+    pass
+
+
 class PlanResponse(BaseModel):
     date: dt_date
     blocks: Sequence[PlanBlockRead]
     reminders: Sequence[ReminderRead]
+    home_location: Optional[LocationRead] = None
 
 
 class PlanRequest(BaseModel):
     date: Optional[dt_date] = None
+
+
+class ClientConfig(BaseModel):
+    google_maps_api_key: Optional[str] = None

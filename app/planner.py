@@ -7,6 +7,7 @@ from sqlalchemy import delete, extract, select
 from sqlalchemy.orm import Session
 
 from .config import settings
+from .locations import ensure_home_location
 from .models import PlanBlock, Reminder, Task
 
 
@@ -35,6 +36,7 @@ def get_plan_for_date(db: Session, target_date: date) -> Sequence[PlanBlock]:
 
 def generate_plan(db: Session, target_date: date) -> tuple[list[PlanBlock], list[Reminder]]:
     start, end = day_bounds(target_date)
+    home = ensure_home_location(db)
 
     # wipe existing plan blocks/reminders for the date
     db.execute(
@@ -78,7 +80,7 @@ def generate_plan(db: Session, target_date: date) -> tuple[list[PlanBlock], list
             task_id=task.id,
             trigger_time=cursor - timedelta(minutes=10),
             reminder_type="location" if task.location else "time",
-            location_hint=task.location,
+            location_hint=task.location or home.name,
         )
         db.add(reminder)
         reminders.append(reminder)
